@@ -6,8 +6,8 @@
 //
 
 import UIKit
+import CoreLocation
 
-// MARK: - Weather
 struct Weather: Codable {
     let latitude, longitude: Double
     let elevation: Int
@@ -25,7 +25,6 @@ struct Weather: Codable {
     }
 }
 
-// MARK: - Hourly
 struct Hourly: Codable {
     let temperature2M: [Double]
     let time: [String]
@@ -38,7 +37,6 @@ struct Hourly: Codable {
     }
 }
 
-// MARK: - HourlyUnits
 struct HourlyUnits: Codable {
     let time, temperature2M, windspeed10M: String
 
@@ -49,36 +47,68 @@ struct HourlyUnits: Codable {
     }
 }
 
+struct Result: Codable {
+    var results: [City]?
+}
+
+struct City: Codable {
+    var name: String?
+    var country: String?
+    let latitude, longitude: Double
+}
+
 class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource {
     @IBOutlet weak var LocationLabel: UILabel!
     @IBOutlet weak var tableView: UITableView!
     
+    var currentCity: String = ""
     var weather: Weather?
+    var latitude: Double = 0.0, longitude: Double = 0.0
+    var locationManager = CLLocationManager()
+
+    override func viewDidAppear(_ animated: Bool) {
+        
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        locationManager.delegate = nil
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        loadData()
+        if currentCity == "My Location"
+        {
+            LocationLabel.text = "My Location"
+            loadLocation()
+        } else {
+        loadCityData()
+        }
         tableView.delegate = self
         tableView.dataSource = self
     }
 
+    
+    func loadLocation() {
+        locationManager.delegate = self
+        locationManager.requestWhenInUseAuthorization()
+        locationManager.distanceFilter = kCLDistanceFilterNone
+        locationManager.headingFilter = 5.0
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+    }
+    
     func loadData() {
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=52.13&longitude=29.34&hourly=temperature_2m,windspeed_10m"
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latitude)&longitude=\(longitude)&hourly=temperature_2m,windspeed_10m"
 
         
         if let url = URL(string: urlString) {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
-            print(1234)
             
             NSURLConnection.sendAsynchronousRequest(request, queue: OperationQueue.main) { response, data, error in
                 if let data = data {
-                    
-//                    let jsonString = String(data: data, encoding: .utf8)
-//                    print(jsonString)
                     if let results: Weather = try? JSONDecoder().decode(Weather.self, from: data) {
                         self.weather = results
-                        print(123)
                         self.tableView.reloadData()
                     }
                 }
@@ -89,7 +119,6 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
                 }
             }
         }
-        
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -112,6 +141,55 @@ class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSour
         return UITableViewCell()
     }
     
+    func loadCityData() {
+        let urlString = "https://geocoding-api.open-meteo.com/v1/search?name=\(currentCity)&count=1"
+        if let url = URL(string: urlString) {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+
+            NSURLConnection.sendAsynchronousRequest(request, queue: OperationQueue.main) { response, data, error in
+                if let data = data {
+
+                    if let result: Result = try? JSONDecoder().decode(Result.self, from: data) {
+                        
+                        if(result.results == nil) {
+                            self.LocationLabel.text = "Error"
+                        } else {
+                            self.LocationLabel.text = (result.results?.first?.name)!
+                            self.longitude = (result.results?.first!.longitude)!
+                            self.latitude = (result.results?.first!.latitude)!
+                            self.loadData()                        }
+                    }
+                }
+                
+                if let error = error {
+                    let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
+    
 }
 
+extension ViewController: CLLocationManagerDelegate {
 
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let location = locations.first {
+            latitude = location.coordinate.latitude
+            longitude = location.coordinate.longitude
+            loadData()
+        }
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
+            locationManager.startUpdatingLocation()
+        } else {
+            locationManager.stopUpdatingLocation()
+            
+        }
+    }
+    
+}
